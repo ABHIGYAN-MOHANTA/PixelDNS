@@ -2,6 +2,8 @@
 
 PixelDNS is a fully functional DNS server built from scratch in Java, inspired by the Codecrafters "Build Your Own DNS Server" guide. This project aims to provide a deeper understanding of DNS protocols and server implementation by creating a custom DNS server from the ground up.
 
+![Screenshot at 2024-08-22 23-49-26](https://github.com/user-attachments/assets/836a8ef2-e335-4f97-a6ed-22862152d90f)
+
 ## Features
 
 - **Custom DNS Server**: A DNS server implemented in Java, capable of handling DNS queries and responses.
