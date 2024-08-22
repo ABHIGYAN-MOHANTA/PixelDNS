@@ -1,129 +1,130 @@
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.util.Arrays;
-
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.StringJoiner;
 public class Main {
     public static void main(String[] args) {
-        System.out.println("Logs from the dns server!");
-
         try (DatagramSocket serverSocket = new DatagramSocket(2053)) {
             while (true) {
                 final byte[] buf = new byte[512];
                 final DatagramPacket packet = new DatagramPacket(buf, buf.length);
                 serverSocket.receive(packet);
-                System.out.println("Packet received");
-
-                ByteBuffer receivedData = ByteBuffer.wrap(packet.getData());
-                receivedData.order(ByteOrder.BIG_ENDIAN);
-
-                // Parse the received DNS header
-                short ID = receivedData.getShort(0);
-                byte flags1 = receivedData.get(2);
-                byte flags2 = receivedData.get(3);
-
-                // Extract OPCODE and RD from the received flags
-                int OPCODE = (flags1 >> 3) & 0x0F;
-                boolean RD = (flags1 & 0x01) == 1;
-
-                System.out.println("Received packet ID: " + ID);
-                System.out.println("OPCODE: " + OPCODE);
-                System.out.println("RD: " + RD);
-
-                // Parse the question section
-                int offset = 12; // Start of the question section
-                StringBuilder domainName = new StringBuilder();
-                while (true) {
-                    int labelLength = receivedData.get(offset++) & 0xFF;
-                    if (labelLength == 0) break;
-                    byte[] labelBytes = new byte[labelLength];
-                    receivedData.position(offset);
-                    receivedData.get(labelBytes);
-                    domainName.append(new String(labelBytes)).append(".");
-                    offset += labelLength;
-                }
-                if (domainName.length() > 0) {
-                    domainName.setLength(domainName.length() - 1); // Remove trailing dot
-                }
-                short qtype = receivedData.getShort(offset);
-                short qclass = receivedData.getShort(offset + 2);
-
-                System.out.println("Domain Name: " + domainName);
-                System.out.println("Query Type: " + qtype);
-                System.out.println("Query Class: " + qclass);
-
-                // Prepare response flags
-                byte responseFlags1 = (byte) (0x80 | (OPCODE << 3) | (RD ? 1 : 0));
-                byte responseFlags2 = 0;
-
-                // Set RCODE based on OPCODE
-                if (OPCODE != 0) {
-                    responseFlags2 |= 4; // RCODE 4 (not implemented) for non-standard queries
-                }
-
-                short QDCOUNT = 1;
-                short ANCOUNT = 1;
-                short NSCOUNT = 0;
-                short ARCOUNT = 0;
-
-                // Prepare the answer section
-                int TTL = 60;
-                short RDLENGTH = 4;
-                byte[] RDATA = new byte[]{8, 8, 8, 8}; // 8.8.8.8
-
-                ByteArrayOutputStream responseStream = new ByteArrayOutputStream();
-                DataOutputStream dos = new DataOutputStream(responseStream);
-
-                // Write header
-                dos.writeShort(ID);
-                dos.writeByte(responseFlags1);
-                dos.writeByte(responseFlags2);
-                dos.writeShort(QDCOUNT);
-                dos.writeShort(ANCOUNT);
-                dos.writeShort(NSCOUNT);
-                dos.writeShort(ARCOUNT);
-
-                // Write question section
-                dos.write(encodeDomainName(domainName.toString()));
-                dos.writeShort(qtype);
-                dos.writeShort(qclass);
-
-                // Write answer section
-                dos.write(encodeDomainName(domainName.toString()));
-                dos.writeShort(qtype);
-                dos.writeShort(qclass);
-                dos.writeInt(TTL);
-                dos.writeShort(RDLENGTH);
-                dos.write(RDATA);
-
-                byte[] response = responseStream.toByteArray();
-
-                System.out.println(Arrays.toString(response));
-                System.out.println(response.length);
-                final DatagramPacket packetResponse = new DatagramPacket(response, response.length, packet.getSocketAddress());
-                serverSocket.send(packetResponse);
-                System.out.println("Packet sent");
+                System.out.println("Received data");
+                // Request
+                DNSMessage requestMessage = new DNSMessage(buf);
+                // Response
+                DNSMessage responseMessage = requestMessage;
+                // Set flags
+                char[] requestFlags =
+                        String.format("%16s", Integer.toBinaryString(responseMessage.flags))
+                                .replace(' ', '0')
+                                .toCharArray();
+                requestFlags[0] = '1';  // QR
+                requestFlags[13] = '1'; // RCODE
+                responseMessage.flags =
+                        (short)Integer.parseInt(new String(requestFlags), 2);
+                byte[] responseBuffer = responseMessage.array();
+                DatagramPacket responsePacket = new DatagramPacket(
+                        responseBuffer, responseBuffer.length, packet.getSocketAddress());
+                serverSocket.send(responsePacket);
             }
         } catch (IOException e) {
             System.out.println("IOException: " + e.getMessage());
         }
     }
-
-    private static byte[] encodeDomainName(String domain) {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+}
+class DNSMessage {
+    public short id = 1234;
+    public short flags;
+    // public short qdcount;
+    // public short ancount;
+    public short nscount;
+    public short arcount;
+    public Map<String, byte[]> map = new HashMap<>();
+    public DNSMessage(byte[] array) {
+        ByteBuffer buffer = ByteBuffer.wrap(array);
+        // Parse header section
+        id = buffer.getShort();
+        flags = buffer.getShort();
+        int qdcount = buffer.getShort();
+        buffer.getShort(); // ancount
+        nscount = buffer.getShort();
+        arcount = buffer.getShort();
+        // Parse question section
+        for (int i = 0; i < qdcount; i++) {
+            map.put(decodeDomainName(buffer), new byte[] {8, 8, 8, 8});
+            buffer.getShort(); // Type
+            buffer.getShort(); // Class
+        }
+    }
+    public byte[] array() {
+        ByteBuffer buffer = ByteBuffer.allocate(512);
+        // Write header
+        buffer.putShort(id);
+        buffer.putShort(flags);
+        buffer.putShort((short)map.size());
+        buffer.putShort((short)map.size());
+        buffer.putShort(nscount);
+        buffer.putShort(arcount);
+        // Write question section
+        for (String domain : map.keySet()) {
+            buffer.put(encodeDomainName(domain));
+            buffer.putShort((short)1); // Type = A
+            buffer.putShort((short)1); // Class = IN
+        }
+        // Write answer section
+        for (String domain : map.keySet()) {
+            buffer.put(encodeDomainName(domain));
+            buffer.putShort((short)1);   // Type = A
+            buffer.putShort((short)1);   // Class = IN
+            buffer.putInt(60);           // TTL
+            buffer.putShort((short)4);   // Length
+            buffer.put(map.get(domain)); // Data
+        }
+        return buffer.array();
+    }
+    private byte[] encodeDomainName(String domain) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
         for (String label : domain.split("\\.")) {
-            baos.write(label.length());
-            try {
-                baos.write(label.getBytes("UTF-8"));
-            } catch (IOException e) {
-                e.printStackTrace();
+            out.write(label.length());
+            out.writeBytes(label.getBytes());
+        }
+        out.write(0); // Terminating null byte
+        return out.toByteArray();
+    }
+
+    private String decodeDomainName(ByteBuffer buffer) {
+        byte labelLength;
+        StringJoiner labels = new StringJoiner(".");
+
+        boolean compressed = false;
+        int position = 0;
+
+        while ((labelLength = buffer.get()) != 0) {
+            if ((labelLength & 0xC0) == 0xC0) {
+                compressed = true;
+                // It's a pointer. Create a new ByteBuffer from the current one to
+                // handle jumps
+                int offset = ((labelLength & 0x3F) << 8) | (buffer.get() & 0xFF);
+                // Implement jumping logic
+                position = buffer.position();
+                buffer.position(offset);
+            } else {
+                byte[] label = new byte[labelLength];
+                buffer.get(label);
+                labels.add(new String(label));
             }
         }
-        baos.write(0); // terminating null byte
-        return baos.toByteArray();
+        if (compressed) {
+            buffer.position(position);
+        }
+        return labels.toString();
     }
 }
