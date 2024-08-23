@@ -51,6 +51,15 @@ Before you start, ensure you have the following installed:
 
    This command will start the DNS server, listening on port `2053` and forwarding queries to the specified resolver.
 
+2. **Run the Release JAR**:
+
+   If you prefer to use the pre-built release JAR from GitHub, you can download it and run the server
+
+   ```sh
+    java -jar pixel_dns-1.2.jar "127.0.0.1:2053"
+    ```
+
+
 ## Configuration
 
 The server listens for DNS queries on port `2053` by default. You can change this port in the `Main.java` and `pixel_dns.sh` file if needed.
