@@ -24,15 +24,12 @@ jobs:
         id: get_version
         run: echo "VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
 
-      - name: Debug
-        id: ls
-        run: ls -R
-
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
         with:
-          token: ${{ secrets.TOKEN }}
           tag_name: v${{ steps.get_version.outputs.VERSION }}
           release_name: Release ${{ steps.get_version.outputs.VERSION }}
           draft: false
@@ -40,9 +37,10 @@ jobs:
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
         with:
-          token: ${{ secrets.TOKEN }}
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./target/PixelDNS-${{ steps.get_version.outputs.VERSION }}.jar
-          asset_name: PixelDNS-${{ steps.get_version.outputs.VERSION }}.jar
+          asset_name: pixel_dns-${{ steps.get_version.outputs.VERSION }}.jar
           asset_content_type: application/java-archive
